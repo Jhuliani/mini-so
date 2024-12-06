@@ -2,7 +2,7 @@
 [ORG 0x7C00]
 
 KERNEL_OFFSET equ 0x1000
-KERNEL_SECTORS equ 10
+KERNEL_SECTORS equ 11
 
 start:
     mov ax, 0
@@ -19,9 +19,9 @@ start:
     mov ch, 0                 ; Cilindro 0
     mov cl, 2                 ; Setor 2
     mov dh, 0                 ; Cabeça 0
-    mov dl, 0x00             ; Drive A
-    mov bx, KERNEL_OFFSET    ; Endereço de carregamento
-    int 0x13                 ; Interrupção do BIOS
+    mov dl, 0x00              ; Drive A
+    mov bx, KERNEL_OFFSET     ; Endereço de carregamento
+    int 0x13                  ; Interrupção do BIOS
     jc error
 
     mov si, MSG_OK

@@ -6,7 +6,7 @@ section .text
 loader_entry:
     push ebp
     mov ebp, esp
-    call kernel_main
+    call kernel_main   ; Chama a função kernel_main do kernel.c
     mov esp, ebp
     pop ebp
     ret

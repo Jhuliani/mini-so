@@ -3,24 +3,39 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 
-// Funções de porta I/O
-static inline void outb(uint16_t port, uint8_t value);
-static inline void outw(uint16_t port, uint16_t value);
-static inline uint8_t inb(uint16_t port);
+#define VGA_WIDTH 80
+#define VGA_HEIGHT 25
+#define CMD_BUFFER_SIZE 256
+#define VGA_MEMORY 0xB8000
 
-// Funções de string
-size_t strlen(const char* str);
-int strncmp(const char* s1, const char* s2, size_t n);
+// VGA colors
+#define VGA_BLACK 0
+#define VGA_BLUE 1
+#define VGA_GREEN 2
+#define VGA_CYAN 3
+#define VGA_RED 4
+#define VGA_MAGENTA 5
+#define VGA_BROWN 6
+#define VGA_LIGHT_GREY 7
+#define VGA_DARK_GREY 8
+#define VGA_LIGHT_BLUE 9
+#define VGA_LIGHT_GREEN 10
+#define VGA_LIGHT_CYAN 11
+#define VGA_LIGHT_RED 12
+#define VGA_LIGHT_MAGENTA 13
+#define VGA_YELLOW 14
+#define VGA_WHITE 15
 
-// Funções de terminal
+// Function prototypes
+void kernel_main(void);
 void terminal_initialize(void);
 void terminal_clear(void);
 void terminal_putchar(char c);
-void terminal_writestring(const char* data);
+void terminal_writestring(const char* str);
 void terminal_backspace(void);
-
-// Função de teclado
+void update_statusbar(void);
 char keyboard_getchar(void);
 
 #endif
