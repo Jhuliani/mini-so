@@ -12,9 +12,7 @@ Este é um projeto de sistema operacional básico para fins educativos. Ele cons
 
 ## Como Compilar e Executar
 
-1. Compile usando `make`:
-
--make all
+1. entre no diretorio do projeoto e rode o './compile.sh'
 
 ## Requisitos
 
