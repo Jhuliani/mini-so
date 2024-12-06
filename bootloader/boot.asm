@@ -2,7 +2,7 @@
 [ORG 0x7C00]
 
 KERNEL_OFFSET equ 0x1000
-KERNEL_SECTORS equ 17
+KERNEL_SECTORS equ 10
 
 start:
     mov ax, 0
