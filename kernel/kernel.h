@@ -1,37 +1,45 @@
+/* kernel/kernel.h */
 #ifndef KERNEL_H
 #define KERNEL_H
 
-// Definições básicas
+#include <stddef.h>
+#include <stdint.h>
+
+// Memória de vídeo
 #define VIDEO_MEMORY 0xB8000
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
-#define MAX_INPUT 256
+#define MAX_CMD_SIZE 256
+
+// Cores VGA
+#define VGA_BLACK 0
+#define VGA_BLUE 1
+#define VGA_GREEN 2
+#define VGA_CYAN 3
+#define VGA_RED 4
+#define VGA_MAGENTA 5
+#define VGA_BROWN 6
+#define VGA_LIGHT_GREY 7
+#define VGA_DARK_GREY 8
+#define VGA_LIGHT_BLUE 9
+#define VGA_LIGHT_GREEN 10
+#define VGA_LIGHT_CYAN 11
+#define VGA_LIGHT_RED 12
+#define VGA_LIGHT_MAGENTA 13
+#define VGA_LIGHT_BROWN 14
+#define VGA_WHITE 15
 
 // Protótipos de funções
-void clear_screen(void);
-void print_string(const char *str);
-void put_char(char c, char attr);
-void handle_keyboard(void);
-void update_cursor(void);
-void scroll_screen(void);
-
-// Funções inline
-static inline void outb(unsigned short port, unsigned char val) {
-    asm volatile ("outb %0, %1" : : "a"(val), "Nd"(port));
-}
-
-static inline unsigned char inb(unsigned short port) {
-    unsigned char ret;
-    asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
-
-static inline int strcmp(const char *s1, const char *s2) {
-    while (*s1 && (*s1 == *s2)) {
-        s1++;
-        s2++;
-    }
-    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
-}
+void kernel_main(void);
+void terminal_initialize(void);
+void terminal_clear(void);
+void terminal_putchar(char c);
+void terminal_write(const char* data, size_t size);
+void terminal_writestring(const char* data);
+void terminal_scroll(void);
+void keyboard_handler(void);
+static inline void outb(uint16_t port, uint8_t value);
+static inline uint8_t inb(uint16_t port);
+int strcmp(const char *s1, const char *s2);
 
 #endif

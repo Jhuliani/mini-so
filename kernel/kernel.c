@@ -1,147 +1,101 @@
-// Definições
-#define VIDEO_MEMORY 0xB8000
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
-#define MAX_CMD_SIZE 256
+/* kernel/kernel.c */
+#include "kernel.h"
 
-// Cores
-#define BLACK 0
-#define LIGHT_GREY 7
-#define WHITE 15
-#define MAKE_COLOR(fg, bg) ((bg << 4) | fg)
+// Ponteiro para a memória de vídeo
+volatile uint16_t* const video_memory_ptr = (volatile uint16_t*)VIDEO_MEMORY;
 
-// Protótipos de funções
-void clear_screen(void);
-void update_cursor(void);
-void putchar(char c);
-void print(const char *str);
-void execute_command(void);
-void handle_keypress(void);
-void scroll_screen(void); // Adicionado protótipo
-static inline void outb(unsigned short port, unsigned char value);
-static inline unsigned char inb(unsigned short port);
-static int strcmp(const char *s1, const char *s2);
+// Estado do terminal
+size_t terminal_row = 0;
+size_t terminal_column = 0;
+uint8_t terminal_color = 0x07; // Cinza claro sobre preto
+volatile uint16_t* terminal_buffer;
 
-// Variáveis globais
-static int cursor_x = 0;
-static int cursor_y = 0;
+// Buffer de comando
 static char cmd_buffer[MAX_CMD_SIZE];
-static int cmd_pos = 0;
-
-// Funções de porta I/O
-static inline void outb(unsigned short port, unsigned char value) {
-    asm volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
-}
-
-static inline unsigned char inb(unsigned short port) {
-    unsigned char ret;
-    asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
-}
+static size_t cmd_index = 0;
 
 // Funções auxiliares
-static int strcmp(const char *s1, const char *s2) {
-    while (*s1 && (*s1 == *s2)) {
-        s1++;
-        s2++;
-    }
-    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+static inline uint8_t make_color(uint8_t fg, uint8_t bg) {
+    return fg | (bg << 4);
 }
 
-// Funções do terminal
-void scroll_screen() {
-    volatile char *video = (volatile char*)VIDEO_MEMORY;
-    for (int i = 0; i < (VGA_HEIGHT - 1) * VGA_WIDTH * 2; i++) {
-        video[i] = video[i + VGA_WIDTH * 2];
-    }
-    // Limpar última linha
-    for (int i = (VGA_HEIGHT - 1) * VGA_WIDTH * 2; i < VGA_HEIGHT * VGA_WIDTH * 2; i += 2) {
-        video[i] = ' ';
-        video[i + 1] = MAKE_COLOR(LIGHT_GREY, BLACK);
-    }
+static inline uint16_t make_vgaentry(char c, uint8_t color) {
+    return ((uint16_t)color << 8) | (uint16_t)c;
 }
 
-void clear_screen() {
-    volatile char *video = (volatile char*)VIDEO_MEMORY;
-    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT * 2; i += 2) {
-        video[i] = ' ';
-        video[i + 1] = MAKE_COLOR(LIGHT_GREY, BLACK);
-    }
-    cursor_x = 0;
-    cursor_y = 0;
-    update_cursor();
+void terminal_initialize(void) {
+    terminal_row = 0;
+    terminal_column = 0;
+    terminal_color = make_color(VGA_LIGHT_GREY, VGA_BLACK);
+    terminal_buffer = video_memory_ptr;
+
+    terminal_clear();
 }
 
-void update_cursor() {
-    unsigned short pos = cursor_y * VGA_WIDTH + cursor_x;
-    outb(0x3D4, 0x0F);
-    outb(0x3D5, (unsigned char)(pos & 0xFF));
-    outb(0x3D4, 0x0E);
-    outb(0x3D5, (unsigned char)((pos >> 8) & 0xFF));
-}
-
-void putchar(char c) {
-    volatile char *video = (volatile char*)VIDEO_MEMORY;
-    int offset = (cursor_y * VGA_WIDTH + cursor_x) * 2;
-
-    switch(c) {
-        case '\n':
-            cursor_x = 0;
-            cursor_y++;
-            break;
-        case '\r':
-            cursor_x = 0;
-            break;
-        case '\b':
-            if (cursor_x > 0) {
-                cursor_x--;
-                offset = (cursor_y * VGA_WIDTH + cursor_x) * 2;
-                video[offset] = ' ';
-                video[offset + 1] = MAKE_COLOR(LIGHT_GREY, BLACK);
-            }
-            break;
-        default:
-            video[offset] = c;
-            video[offset + 1] = MAKE_COLOR(LIGHT_GREY, BLACK);
-            cursor_x++;
-            break;
-    }
-
-    if (cursor_x >= VGA_WIDTH) {
-        cursor_x = 0;
-        cursor_y++;
-    }
-    if (cursor_y >= VGA_HEIGHT) {
-        scroll_screen();
-        cursor_y = VGA_HEIGHT - 1;
-    }
-    update_cursor();
-}
-
-void print(const char *str) {
-    while (*str) {
-        putchar(*str++);
+void terminal_clear(void) {
+    for (size_t y = 0; y < VGA_HEIGHT; y++) {
+        for (size_t x = 0; x < VGA_WIDTH; x++) {
+            const size_t index = y * VGA_WIDTH + x;
+            terminal_buffer[index] = make_vgaentry(' ', terminal_color);
+        }
     }
 }
 
-void execute_command() {
-    cmd_buffer[cmd_pos] = '\0';
-
-    if (cmd_pos > 0) {
-        if (strcmp(cmd_buffer, "clear") == 0) {
-            clear_screen();
-        } else {
-            print("\nComando desconhecido: ");
-            print(cmd_buffer);
+void terminal_scroll(void) {
+    for (size_t y = 0; y < VGA_HEIGHT - 1; y++) {
+        for (size_t x = 0; x < VGA_WIDTH; x++) {
+            const size_t dst_index = y * VGA_WIDTH + x;
+            const size_t src_index = (y + 1) * VGA_WIDTH + x;
+            terminal_buffer[dst_index] = terminal_buffer[src_index];
         }
     }
 
-    print("\n$ ");
-    cmd_pos = 0;
+    // Limpar a última linha
+    for (size_t x = 0; x < VGA_WIDTH; x++) {
+        const size_t index = (VGA_HEIGHT - 1) * VGA_WIDTH + x;
+        terminal_buffer[index] = make_vgaentry(' ', terminal_color);
+    }
+
+    if (terminal_row > 0) {
+        terminal_row = VGA_HEIGHT - 1;
+    }
 }
 
-// Mapa do teclado (US)
-static const char kbd_us[128] = {
+void terminal_putchar(char c) {
+    if (c == '\n') {
+        terminal_column = 0;
+        if (++terminal_row == VGA_HEIGHT) {
+            terminal_scroll();
+        }
+        return;
+    }
+
+    const size_t index = terminal_row * VGA_WIDTH + terminal_column;
+    terminal_buffer[index] = make_vgaentry(c, terminal_color);
+
+    if (++terminal_column == VGA_WIDTH) {
+        terminal_column = 0;
+        if (++terminal_row == VGA_HEIGHT) {
+            terminal_scroll();
+        }
+    }
+}
+
+void terminal_write(const char* data, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        terminal_putchar(data[i]);
+    }
+}
+
+void terminal_writestring(const char* data) {
+    size_t i = 0;
+    while (data[i]) {
+        terminal_putchar(data[i++]);
+    }
+}
+
+// Mapa de teclado (US)
+static const char keyboard_map[128] = {
     0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
     '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
     0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
@@ -149,49 +103,79 @@ static const char kbd_us[128] = {
     '*', 0, ' '
 };
 
-void handle_keypress() {
-    unsigned char status = inb(0x64);
-    if (status & 0x01) {
-        unsigned char scancode = inb(0x60);
+void keyboard_handler(void) {
+    uint8_t scancode = inb(0x60);
 
-        if (scancode & 0x80) {
-            return; // Tecla solta
-        }
+    if (scancode & 0x80) {
+        return; // Tecla liberada
+    }
 
-        char c = kbd_us[scancode];
-        if (c) {
-            if (c == '\n') {
-                putchar(c);
-                execute_command();
-            }
-            else if (c == '\b') {
-                if (cmd_pos > 0) {
-                    cmd_pos--;
-                    putchar(c);
+    char c = keyboard_map[scancode];
+    if (c) {
+        if (c == '\n') {
+            terminal_putchar('\n');
+            cmd_buffer[cmd_index] = '\0';
+
+            // Executar comando
+            if (cmd_index > 0) {
+                if (strcmp(cmd_buffer, "clear") == 0) {
+                    terminal_clear();
+                } else {
+                    terminal_writestring("Comando desconhecido: ");
+                    terminal_writestring(cmd_buffer);
+                    terminal_putchar('\n');
                 }
             }
-            else if (cmd_pos < MAX_CMD_SIZE - 1) {
-                cmd_buffer[cmd_pos++] = c;
-                putchar(c);
+
+            // Resetar buffer de comando
+            terminal_writestring("$ ");
+            cmd_index = 0;
+        }
+        else if (c == '\b') {
+            if (cmd_index > 0) {
+                cmd_index--;
+                terminal_putchar('\b');
+                terminal_putchar(' ');
+                terminal_putchar('\b');
             }
+        }
+        else if (cmd_index < MAX_CMD_SIZE - 1 && c >= ' ') {
+            cmd_buffer[cmd_index++] = c;
+            terminal_putchar(c);
         }
     }
 }
 
-// Função principal
-void kernel_main() {
-    volatile char *video = (volatile char*)VIDEO_MEMORY;
-    video[0] = 'K';
-    video[1] = MAKE_COLOR(WHITE, BLACK);
+// Funções de porta I/O
+static inline void outb(uint16_t port, uint8_t value) {
+    asm volatile ("outb %0, %1" : : "a"(value), "Nd"(port));
+}
 
-    clear_screen();
-    print("Kernel iniciado com sucesso!\n");
-    print("Sistema Operacional v0.2\n");
-    print("Comandos disponiveis:\n");
-    print("  clear - Limpa a tela\n");
-    print("\n$ ");
+static inline uint8_t inb(uint16_t port) {
+    uint8_t ret;
+    asm volatile ("inb %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
 
+// Função strcmp simplificada
+int strcmp(const char *s1, const char *s2) {
+    while (*s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
+    }
+    return *(const unsigned char*)s1 - *(const unsigned char*)s2;
+}
+
+void kernel_main(void) {
+    // Inicializar o terminal
+    terminal_initialize();
+
+    terminal_writestring("Kernel inicializado com sucesso!\n");
+    terminal_writestring("Sistema Operacional v0.1\n");
+    terminal_writestring("$ ");
+
+    // Loop principal
     while (1) {
-        handle_keypress();
+        keyboard_handler();
     }
 }
